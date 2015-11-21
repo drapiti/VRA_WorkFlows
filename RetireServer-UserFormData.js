@@ -72,8 +72,9 @@ try  {
 																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																			
 	
 	if(RetireAllNodes && Cluster != "STANDALONE") {
+		HasStorage = true;
 		
-		var selectQuery = "SELECT ClusterId FROM FarmObject as F JOIN Cluster as C ON F.ClusterId=C.Id WHERE C.Name = '"+Cluster+"' AND F.Name = '"+Hostname+"' AND F.Serial = '"+Serial+"';";										
+		var selectQuery = "SELECT ClusterId FROM FarmObject as F JOIN Cluster as C ON F.ClusterId=C.Id JOIN ServiceLevel as SL ON F.ServiceLevelId=SL.Id JOIN Service as S ON SL.ServiceId=S.Id WHERE C.Name = '"+Cluster+"' AND F.Name = '"+Hostname+"' AND F.Serial = '"+Serial+"' AND S.Name = '"+tenant+"';";										
 		System.log( "selectQuery >"+selectQuery );
 		var res = cmdb.readCustomQuery(selectQuery);			
 																														
@@ -139,7 +140,6 @@ try  {
 					lun.FarmObjectId		= Server_Data[x].FarmObjectId;
 					Delete_LUNs.push(lun);				
 				}	
-				HasStorage = true;	
 			}		
 			// Port_Data		
 			var selectQuery = "SELECT F.Name as Hostname, P.Id, PortNo, P.State, Type, WWPN, MAC FROM Port as P JOIN FarmObject as F ON F.Id=P.FarmObjectId WHERE FarmObjectId = "+Server_Data[x].FarmObjectId+";";										
@@ -213,7 +213,7 @@ try  {
 					lun.FarmObjectId		= Server_Data[x].FarmObjectId;
 					Delete_LUNs.push(lun);																
 				}
-				HasStorage = true;						
+				HasStorage = true;					
 			}
 	
 			// Port_Data		
@@ -244,16 +244,14 @@ try  {
 			}												
 		}																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																									
 	}				
-	else if(!RetireAllNodes && Cluster != "STANDALONE"){								
+	else if(!RetireAllNodes && Cluster != "STANDALONE"){
+		HasStorage = true;
+
 		var ProdActiveNodes 	= new Array();
 		var DRActiveNodes		= new Array();
-		HasStorage = true;
-		
-		var UnMapProdNodeIds	= new Array();
-		var UnMapDRNodeIds 		= new Array();
-		
-		//Get Cluster IDs
-		var selectQuery = "SELECT C.Id FROM FarmObject as F JOIN Cluster as C ON F.ClusterId=C.Id WHERE C.Name = '"+Cluster+"' AND F.Name='"+Hostname+"' AND F.Serial='"+Serial+"';";										
+				
+		//Get Cluster IDs use tenant variable for extra safety
+		var selectQuery = "SELECT C.Id FROM FarmObject as F JOIN Cluster as C ON F.ClusterId=C.Id JOIN ServiceLevel as SL ON F.ServiceLevelId=SL.Id JOIN Service as S ON SL.ServiceId=S.Id  WHERE C.Name = '"+Cluster+"' AND F.Name='"+Hostname+"' AND F.Serial='"+Serial+"' AND S.Name='"+tenant+"';";										
 		System.log( "selectQuery >"+selectQuery );
 		var res = cmdb.readCustomQuery(selectQuery);
 																														
@@ -272,7 +270,7 @@ try  {
 			System.log( "ClusterId[1] >"+ClusterId[1] );
 		}																																																																								
 		
-		//Determine Active Nodes
+		//Determine Number of Active Nodes of Production and DR Clusters
 		var selectQuery = "SELECT Id FROM FarmObject WHERE ClusterId = "+ClusterId[0]+" AND State='Active';";										
 		System.log( "selectQuery >"+selectQuery );
 		var res = cmdb.readCustomQuery(selectQuery);
@@ -292,7 +290,7 @@ try  {
 		}
 															
 		//Get All Nodes to be retired --> Implies that DR nodes come after Prod Nodes always.				
-		var selectQuery = "SELECT Id, Name as Hostname, Serial, ServiceProfile FROM FarmObject WHERE (Name = '"+Hostname+"' AND Serial = '"+Serial+"') OR Name = '"+DRHostname+"';";										
+		var selectQuery = "SELECT Id, Name as Hostname, Serial, ServiceProfile FROM FarmObject JOIN ServiceLevel as SL ON F.ServiceLevelId=SL.Id JOIN Service as S ON SL.ServiceId=S.Id WHERE S.Name='"+tenant+"' AND (Name = '"+Hostname+"' AND Serial = '"+Serial+"') OR Name = '"+DRHostname+"';";										
 		System.log( "selectQuery >"+selectQuery );
 		var res = cmdb.readCustomQuery(selectQuery);
 		if(res.length > 0){		
@@ -307,48 +305,32 @@ try  {
 			}
 		}	
 		
-		var selectQuery = "SELECT Id FROM FarmObject WHERE ClusterId = "+ClusterId[0]+" AND Id IN (SELECT Id FROM FarmObject WHERE Name = '"+Hostname+"' AND Serial = '"+Serial+"');"						
-		System.log( "selectQuery >"+selectQuery );
-		var res = cmdb.readCustomQuery(selectQuery);
-		if(res.length > 0){		
-			for(var x in res){	
-				UnMapProdNodeIds[x] = res[x].getProperty("Id");	
-			}
-		}
 		
-		var selectQuery = "SELECT Id FROM FarmObject WHERE ClusterId = "+ClusterId[1]+" AND Id IN (SELECT Id FROM FarmObject WHERE Name = '"+DRHostname+"');"						
-		System.log( "selectQuery >"+selectQuery );
-		var res = cmdb.readCustomQuery(selectQuery);
-		if(res.length > 0){		
-			for(var x in res){	
-				UnMapDRNodeIds[x] = res[x].getProperty("Id");	
-			}
-		}
-												
-		if(ProdActiveNodes.length > 1 && DRActiveNodes.length == 1 ){ 
-			HasStorage = true;	
-			//If DrNodes is == 1 then we can delete LUNs in DR site including boot LUN instead of unmapping only				
-			//If not DR node unmap only. Get LUNs from ClusterId only 1 copy of the lun is contained in the LUN table. 												
-			for(var i=0; i<UnMapProdNodeIds.length; i++){					
-				var selectQuery = "SELECT F.Name as Hostname, L.Id, LunLabel, UidSerial, Size FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.ClusterId = '"+ClusterId[0]+"' AND L.IsBootLun='false';";										
-				System.log( "selectQuery > "+selectQuery );
-				var luns = cmdb.readCustomQuery(selectQuery);				
-				if(luns.length > 0){		
-					for(var z in luns){											
-						var lun 				= new Object();
-						lun.Hostname			= Server_Data[0].Hostname;
-						lun.LunId				= luns[z].getProperty("Id");										
-						lun.LunLabel			= luns[z].getProperty("LunLabel");
-						lun.UidSerial			= luns[z].getProperty("UidSerial");								
-						lun.Size				= luns[z].getProperty("Size");
-						lun.FarmObjectId		= Server_Data[0].FarmObjectId;	
-						UnMap_LUNs.push(lun);																
-					}																								
-				}			
-			}	
-											
-			//All boot LUNs for selected server are deleted
-			var selectQuery = "SELECT F.Name as Hostname, L.Id, LunLabel, UidSerial, Size FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE FarmObjectId = "+Server_Data[0].FarmObjectId+" AND IsBootLun='true';";										
+		//If DRActiveNodes is == 1 then we can delete LUNs in DR site including boot LUN provided it is the corresponding DR Server.										
+		if(ProdActiveNodes.length > 1 && DRActiveNodes.length == 1 ){ 			
+										
+			//ProdActiveNodes[0] contains the id of the primary node of the cluster which is contained in the LUN table. This will identify all the data LUN information to be unmapped.
+			// The actual node to unmap is contained in Server_Data[0] array. This way the user can view the details of all the LUNs to be unmapped. 									
+					
+			var selectQuery = "SELECT Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = '"+ProdActiveNodes[0]+"' AND L.IsBootLun='false';";										
+			System.log( "selectQuery > "+selectQuery );
+			var luns = cmdb.readCustomQuery(selectQuery);				
+			if(luns.length > 0){		
+				for(var z in luns){											
+					var lun 				= new Object();
+					lun.Hostname			= Server_Data[0].Hostname;
+					lun.LunId				= luns[z].getProperty("Id");										
+					lun.LunLabel			= luns[z].getProperty("LunLabel");
+					lun.UidSerial			= luns[z].getProperty("UidSerial");								
+					lun.Size				= luns[z].getProperty("Size");
+					lun.FarmObjectId		= Server_Data[0].FarmObjectId;	
+					UnMap_LUNs.push(lun);																
+				}																								
+			}				
+						
+			//The boot LUNs are contained in the LUN table in a one to one association therefore we can use the Server_Data[0] array to get the Boot LUN information. 								
+			//Boot LUNs having a one to one association are always deleted rather than unmapped therefore we load them into the Delete_LUN array.
+			var selectQuery = "SELECT Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = "+Server_Data[0].FarmObjectId+" AND IsBootLun='true';";										
 			var luns = cmdb.readCustomQuery(selectQuery);				
 			if(luns.length > 0){		
 				for(var z in luns){											
@@ -363,22 +345,24 @@ try  {
 				}																			
 			}
 			
-			//Single Node in DR has All LUNs removed only if DRHostname exists and is the only node
-			var selectQuery = "SELECT F.Name as Hostname, L.Id, LunLabel, UidSerial, Size FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE FarmObjectId = "+DRActiveNodes[0]+" AND F.Name = '"+DRHostname+"';";										
-			System.log( "selectQuery >"+selectQuery );
-			var luns = cmdb.readCustomQuery(selectQuery);				
-			if(luns.length > 0){		
-				for(var z in luns){											
-					var lun 				= new Object();
-					lun.Hostname			= Server_Data[1].Hostname;
-					lun.LunId				= luns[z].getProperty("Id");										
-					lun.LunLabel			= luns[z].getProperty("LunLabel");
-					lun.UidSerial			= luns[z].getProperty("UidSerial");								
-					lun.Size				= luns[z].getProperty("Size");
-					lun.FarmObjectId		= Server_Data[1].FarmObjectId;
-					Delete_LUNs.push(lun);																
-				}																			
-			}					
+			//Single Node in DR has all LUNs removed if the corresponding DR server exists ie DRHostname
+			if (Server_Data[1]) {				
+				var selectQuery = "SELECT Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = "+Server_Data[1].FarmObjectId+";";										
+				System.log( "selectQuery >"+selectQuery );
+				var luns = cmdb.readCustomQuery(selectQuery);				
+				if(luns.length > 0){		
+					for(var z in luns){											
+						var lun 				= new Object();
+						lun.Hostname			= Server_Data[1].Hostname;
+						lun.LunId				= luns[z].getProperty("Id");										
+						lun.LunLabel			= luns[z].getProperty("LunLabel");
+						lun.UidSerial			= luns[z].getProperty("UidSerial");								
+						lun.Size				= luns[z].getProperty("Size");
+						lun.FarmObjectId		= Server_Data[1].FarmObjectId;
+						Delete_LUNs.push(lun);																
+					}																			
+				}					
+			}
 		
 			for(var x=0; x<Server_Data.length; x++){									
 				// Port_Data		
@@ -407,23 +391,7 @@ try  {
 				}																																						
 			} //End of for loop																															
 		}				
-		else if(ProdActiveNodes.length == 1 && DRActiveNodes.length == 1) {		
-			HasStorage = true;	
-			//If last node of cluster delete all LUNs		
-			var selectQuery = "SELECT F.Name as Hostname, L.Id, L.LunLabel, L.UidSerial, L.Size, L.FarmObjectId FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.ClusterId = "+ClusterId[0]+" OR F.ClusterId = "+ClusterId[1]+";";										
-			var luns = cmdb.readCustomQuery(selectQuery);				
-			if(luns.length > 0){		
-				for(var z in luns){											
-					var lun 				= new Object();
-					lun.Hostname			= luns[z].getProperty("Hostname");
-					lun.LunId				= luns[z].getProperty("Id");										
-					lun.LunLabel			= luns[z].getProperty("LunLabel");
-					lun.UidSerial			= luns[z].getProperty("UidSerial");								
-					lun.Size				= luns[z].getProperty("Size");
-					lun.FarmObjectId		= luns[z].getProperty("FarmObjectId");
-					Delete_LUNs.push(lun);																
-				}																			
-			}	
+		else if(ProdActiveNodes.length == 1 && DRActiveNodes.length == 1) {					
 			for(var x=0; x<Server_Data.length; x++){
 				// Port_Data		
 				var selectQuery = "SELECT F.Name as Hostname, P.Id, PortNo, P.State, Type, WWPN, MAC FROM Port as P JOIN FarmObject as F ON F.Id=P.FarmObjectId WHERE FarmObjectId = "+Server_Data[x].FarmObjectId+";";										
@@ -447,69 +415,35 @@ try  {
 				if(reservations.length > 0){		
 					for(var z in reservations){						
 						ReservationId[z]		= reservations[z].getProperty("Id");										
-					}		
+					}							
 				}	
-			}																									
-		}	
-		else if(ProdActiveNodes.length > 1 && DRActiveNodes.length > 1) {
-			for(var x=0; x<Server_Data.length; x++){
-				var selectQuery = "SELECT F.Name as Hostname, L.Id, LunLabel, UidSerial, Size FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE  = "+Server_Data[x].FarmObjectId+" AND IsBootLun='true';";										
+
+				//If it is the last node of the cluster we can delete all LUNs both in Production and DR site.		
+				var selectQuery = "SELECT Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = "+Server_Data[x].FarmObjectId+";";										
 				var luns = cmdb.readCustomQuery(selectQuery);				
 				if(luns.length > 0){		
 					for(var z in luns){											
 						var lun 				= new Object();
-						lun.Hostname			= Server_Data[x].Hostname;	
+						lun.Hostname			= Server_Data[x].Hostname;
 						lun.LunId				= luns[z].getProperty("Id");										
 						lun.LunLabel			= luns[z].getProperty("LunLabel");
 						lun.UidSerial			= luns[z].getProperty("UidSerial");								
 						lun.Size				= luns[z].getProperty("Size");
-						lun.FarmObjectId		= Server_Data[x].FarmObjectId;	
+						lun.FarmObjectId		= Server_Data[x].FarmObjectId;
 						Delete_LUNs.push(lun);																
 					}																			
-				}
-			}			
-			for(var i=0; i<UnMapProdNodeIds.length; i++){					
-				var selectQuery = "SELECT F.Name as Hostname, L.Id, LunLabel, UidSerial, Size FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.ClusterId = '"+ClusterId[0]+"' AND L.IsBootLun='false';";									
-				var luns = cmdb.readCustomQuery(selectQuery);				
-				if(luns.length > 0){		
-					for(var z in luns){											
-						var lun 				= new Object();
-						lun.Hostname			= Server_Data[0].Hostname;
-						lun.LunId				= luns[z].getProperty("Id");										
-						lun.LunLabel			= luns[z].getProperty("LunLabel");
-						lun.UidSerial			= luns[z].getProperty("UidSerial");								
-						lun.Size				= luns[z].getProperty("Size");
-						lun.FarmObjectId		= Server_Data[0].FarmObjectId;	
-						UnMap_LUNs.push(lun);																
-					}																			
-				}								
-			}
-			
-			for(var i=0; i<UnMapDRNodeIds.length; i++){					
-				var selectQuery = "SELECT F.Name as Hostname, L.Id, LunLabel, UidSerial, Size FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.ClusterId = '"+ClusterId[1]+"' AND L.IsBootLun='false';";									
-				var luns = cmdb.readCustomQuery(selectQuery);				
-				if(luns.length > 0){		
-					for(var z in luns){											
-						var lun 				= new Object();
-						lun.Hostname			= Server_Data[1].Hostname;
-						lun.LunId				= luns[z].getProperty("Id");										
-						lun.LunLabel			= luns[z].getProperty("LunLabel");
-						lun.UidSerial			= luns[z].getProperty("UidSerial");								
-						lun.Size				= luns[z].getProperty("Size");
-						lun.FarmObjectId		= Server_Data[1].FarmObjectId;	
-						UnMap_LUNs.push(lun);																
-					}																			
-				}								
-			}
-			
+				}		
+			}																									
+		}	
+		else if(ProdActiveNodes.length > 1 && DRActiveNodes.length > 1) {			
 			for(var x=0; x<Server_Data.length; x++){
 				// Port_Data		
-				var selectQuery = "SELECT F.Name as Hostname, P.Id, PortNo, P.State, Type, WWPN, MAC FROM Port as P JOIN FarmObject as F ON F.Id=P.FarmObjectId WHERE FarmObjectId = "+Server_Data[x].FarmObjectId+";";										
+				var selectQuery = "SELECT Id, PortNo, State, Type, WWPN, MAC FROM Port WHERE FarmObjectId = "+Server_Data[x].FarmObjectId+";";										
 				var ports = cmdb.readCustomQuery(selectQuery);
 				if(ports.length > 0){
 					for(var y in ports){				
 						var port 				= new Object();		
-						port.Hostname			= ports[y].getProperty("Hostname");
+						port.Hostname			= Server_Data[x].Hostname;
 						port.PortId				= ports[y].getProperty("Id");		
 						port.PortNo				= ports[y].getProperty("PortNo");
 						port.State				= ports[y].getProperty("State");
@@ -526,8 +460,56 @@ try  {
 					for(var z in reservations){						
 						ReservationId[z]		= reservations[z].getProperty("Id");										
 					}		
-				}	
-			}																																																	
+				}		
+
+				// As above if Boot LUNs one to one association we can delete them.	
+				var selectQuery = "SELECT Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = "+Server_Data[x].FarmObjectId+" AND IsBootLun='true';";										
+				var luns = cmdb.readCustomQuery(selectQuery);				
+				if(luns.length > 0){		
+					for(var z in luns){											
+						var lun 				= new Object();
+						lun.Hostname			= Server_Data[x].Hostname;	
+						lun.LunId				= luns[z].getProperty("Id");										
+						lun.LunLabel			= luns[z].getProperty("LunLabel");
+						lun.UidSerial			= luns[z].getProperty("UidSerial");								
+						lun.Size				= luns[z].getProperty("Size");
+						lun.FarmObjectId		= Server_Data[x].FarmObjectId;	
+						Delete_LUNs.push(lun);																
+					}																			
+				}
+			}			
+			
+			//ProdActiveNodes[0] contains primary node which is contained in LUN table. We add this to the UnMap_LUNs array since we have multiple nodes.
+			var selectQuery = "SELECT Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = '"+ProdActiveNodes[0]+"' AND L.IsBootLun='false';";									
+			var luns = cmdb.readCustomQuery(selectQuery);				
+			if(luns.length > 0){		
+				for(var z in luns){											
+					var lun 				= new Object();
+					lun.Hostname			= Server_Data[0].Hostname;
+					lun.LunId				= luns[z].getProperty("Id");										
+					lun.LunLabel			= luns[z].getProperty("LunLabel");
+					lun.UidSerial			= luns[z].getProperty("UidSerial");								
+					lun.Size				= luns[z].getProperty("Size");
+					lun.FarmObjectId		= Server_Data[0].FarmObjectId;	
+					UnMap_LUNs.push(lun);																
+				}																			
+			}								
+			
+			//DRActiveNodes[0] contains the primary node of the DR cluster contained in the LUN table. We add this to the UnMap_LUNs array since we have multiple nodes.						
+			var selectQuery = "SELECT F.Name as Hostname, L.Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = '"+DRActiveNodes[0]+"' AND L.IsBootLun='false';";									
+			var luns = cmdb.readCustomQuery(selectQuery);				
+			if(luns.length > 0){		
+				for(var z in luns){											
+					var lun 				= new Object();
+					lun.Hostname			= Server_Data[1].Hostname;
+					lun.LunId				= luns[z].getProperty("Id");										
+					lun.LunLabel			= luns[z].getProperty("LunLabel");
+					lun.UidSerial			= luns[z].getProperty("UidSerial");								
+					lun.Size				= luns[z].getProperty("Size");
+					lun.FarmObjectId		= Server_Data[1].FarmObjectId;	
+					UnMap_LUNs.push(lun);																
+				}																			
+			}																																																										
 		}																								
 	}																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																						
 } catch(ex){
