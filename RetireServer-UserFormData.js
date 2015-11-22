@@ -29,7 +29,7 @@ try  {
 		}
 		else {
 			var DRCluster 	= Cluster;
-			DRCluster 		= DRCluster.split("OVM-PP-").join("OVM-SD-"); 
+			DRCluster 			= DRCluster.split("OVM-PP-").join("OVM-SD-"); 
 			System.log("DRCluster:"+DRCluster);
 		}
 	}
@@ -288,16 +288,16 @@ try  {
 		}
 															
 		//Get All Nodes to be retired --> Implies that DR nodes come after Prod Nodes always.				
-		var selectQuery = "SELECT Id, Name as Hostname, Serial, ServiceProfile FROM FarmObject as F JOIN ServiceLevel as SL ON F.ServiceLevelId=SL.Id JOIN Service as S ON SL.ServiceId=S.Id WHERE S.Name='"+tenant+"' AND (Name = '"+Hostname+"' AND Serial = '"+Serial+"') OR Name = '"+DRHostname+"';";										
+		var selectQuery = "SELECT F.Id, F.Name as Hostname, Serial, ServiceProfile FROM FarmObject as F JOIN ServiceLevel as SL ON F.ServiceLevelId=SL.Id JOIN Service as S ON SL.ServiceId=S.Id WHERE S.Name='"+tenant+"' AND (F.Name = '"+Hostname+"' AND Serial = '"+Serial+"') OR F.Name = '"+DRHostname+"';";										
 		System.log( "selectQuery >"+selectQuery );
 		var res = cmdb.readCustomQuery(selectQuery);
 		if(res.length > 0){		
 			for(var x in res){					
-				var server 				= new Object();	
+				var server 						= new Object();	
 				server.FarmObjectId		= res[x].getProperty("Id");			
 				server.ForeignBank		= tenant;	
-				server.Hostname			= res[x].getProperty("Hostname");
-				server.Serial			= res[x].getProperty("Serial");								
+				server.Hostname				= res[x].getProperty("Hostname");
+				server.Serial					= res[x].getProperty("Serial");								
 				server.ServiceProfile	= res[x].getProperty("ServiceProfile");					
 				Server_Data.push(server);					
 			}
@@ -309,7 +309,7 @@ try  {
 			//ProdActiveNodes[0] contains the id of the primary node of the cluster which is contained in the LUN table. This will identify all the data LUN information to be unmapped.
 			// The actual node to unmap is contained in Server_Data[0] array. This way the user can view the details of all the LUNs to be unmapped. 									
 					
-			var selectQuery = "SELECT Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = '"+ProdActiveNodes[0]+"' AND L.IsBootLun='false';";										
+			var selectQuery = "SELECT Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = '"+ProdActiveNodes[0]+"' AND IsBootLun='false';";										
 			System.log( "selectQuery > "+selectQuery );
 			var luns = cmdb.readCustomQuery(selectQuery);				
 			if(luns.length > 0){		
@@ -477,7 +477,7 @@ try  {
 			}			
 			
 			//ProdActiveNodes[0] contains primary node which is contained in LUN table. We add this to the UnMap_LUNs array since we have multiple nodes.
-			var selectQuery = "SELECT Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = '"+ProdActiveNodes[0]+"' AND L.IsBootLun='false';";									
+			var selectQuery = "SELECT Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = '"+ProdActiveNodes[0]+"' AND IsBootLun='false';";									
 			var luns = cmdb.readCustomQuery(selectQuery);				
 			if(luns.length > 0){		
 				for(var z in luns){											
@@ -493,7 +493,7 @@ try  {
 			}								
 			
 			//DRActiveNodes[0] contains the primary node of the DR cluster contained in the LUN table. We add this to the UnMap_LUNs array since we have multiple nodes.						
-			var selectQuery = "SELECT F.Name as Hostname, L.Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = '"+DRActiveNodes[0]+"' AND L.IsBootLun='false';";									
+			var selectQuery = "SELECT F.Name as Hostname, L.Id, LunLabel, UidSerial, Size FROM Lun WHERE FarmObjectId = '"+DRActiveNodes[0]+"' AND IsBootLun='false';";									
 			var luns = cmdb.readCustomQuery(selectQuery);				
 			if(luns.length > 0){		
 				for(var z in luns){											
