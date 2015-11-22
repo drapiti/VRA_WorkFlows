@@ -5,10 +5,10 @@ try  {
 	user				= user.split("@");
 	user				= user[0];
 	
-	Server_Data			= new Array();	
-	UnMap_LUNs			= new Array();	
-	Delete_LUNs			= new Array();	
-	Port_Data			= new Array();	
+	Server_Data				= new Array();	
+	UnMap_LUNs				= new Array();	
+	Delete_LUNs				= new Array();	
+	Port_Data					= new Array();	
 	var ReservationId	= new Array();
 	var ClusterId 		= new Array();				
 	
@@ -68,9 +68,7 @@ try  {
 	var vraRequestId = req.requestNumber;
 	System.log(vraRequestId);
 
-	insRequest(vraRequestId, "0000-00-00", user, user, ProjectId, state, "Architect", tenant);																																																																																																																																																																																							
-																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																			
-	
+	insRequest(vraRequestId, "0000-00-00", user, user, ProjectId, state, "Architect", tenant);																																														
 	if(RetireAllNodes && Cluster != "STANDALONE") {
 		HasStorage = true;
 		
@@ -188,12 +186,12 @@ try  {
 		System.log( "selectQuery >"+selectQuery );
 		var res = cmdb.readCustomQuery(selectQuery);
 		if(res.length == 1){						
-			var server 				= new Object();	
-			server.FarmObjectId		= res[0].getProperty("Id");			
-			server.Hostname			= DRHostname;
-			server.Serial			= res[0].getProperty("Serial");							
-			server.ServiceProfile	= res[0].getProperty("ServiceProfile");	
-			server.ForeignBank		= tenant;	
+			var server 							= new Object();	
+			server.FarmObjectId			= res[0].getProperty("Id");			
+			server.Hostname					= DRHostname;
+			server.Serial						= res[0].getProperty("Serial");							
+			server.ServiceProfile		= res[0].getProperty("ServiceProfile");	
+			server.ForeignBank			= tenant;	
 			Server_Data.push(server);			
 		}
 						
@@ -204,12 +202,12 @@ try  {
 			var luns = cmdb.readCustomQuery(selectQuery);				
 			if(luns.length > 0){		
 				for(var z in luns){											
-					var lun 				= new Object();
-					lun.Hostname			= Server_Data[x].Hostname;
-					lun.LunId				= luns[z].getProperty("Id");										
-					lun.LunLabel			= luns[z].getProperty("LunLabel");
-					lun.UidSerial			= luns[z].getProperty("UidSerial");								
-					lun.Size				= luns[z].getProperty("Size");
+					var lun 				  	= new Object();
+					lun.Hostname				= Server_Data[x].Hostname;
+					lun.LunId						= luns[z].getProperty("Id");										
+					lun.LunLabel				= luns[z].getProperty("LunLabel");
+					lun.UidSerial				= luns[z].getProperty("UidSerial");								
+					lun.Size						= luns[z].getProperty("Size");
 					lun.FarmObjectId		= Server_Data[x].FarmObjectId;
 					Delete_LUNs.push(lun);																
 				}
@@ -222,14 +220,14 @@ try  {
 			var ports = cmdb.readCustomQuery(selectQuery);
 			if(ports.length > 0){		
 				for(var y in ports){				
-					var port 				= new Object();		
+					var port 				  = new Object();		
 					port.Hostname			= ports[y].getProperty("Hostname");
 					port.PortId				= ports[y].getProperty("Id");		
 					port.PortNo				= ports[y].getProperty("PortNo");
 					port.State				= ports[y].getProperty("State");
-					port.Type				= ports[y].getProperty("Type");								
-					port.WWPN				= ports[y].getProperty("WWPN");	
-					port.MAC				= ports[y].getProperty("MAC");
+					port.Type					= ports[y].getProperty("Type");								
+					port.WWPN					= ports[y].getProperty("WWPN");	
+					port.MAC					= ports[y].getProperty("MAC");
 					Port_Data.push(port);				
 				}		
 			}		
@@ -241,14 +239,14 @@ try  {
 				for(var z in reservations){						
 					ReservationId[z]		= reservations[z].getProperty("Id");										
 				}		
-			}												
-		}																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																									
-	}				
+			}	
+		}	
+	}	
 	else if(!RetireAllNodes && Cluster != "STANDALONE"){
 		HasStorage = true;
 
 		var ProdActiveNodes 	= new Array();
-		var DRActiveNodes		= new Array();
+		var DRActiveNodes			= new Array();
 				
 		//Get Cluster IDs use tenant variable for extra safety
 		var selectQuery = "SELECT C.Id FROM FarmObject as F JOIN Cluster as C ON F.ClusterId=C.Id JOIN ServiceLevel as SL ON F.ServiceLevelId=SL.Id JOIN Service as S ON SL.ServiceId=S.Id  WHERE C.Name = '"+Cluster+"' AND F.Name='"+Hostname+"' AND F.Serial='"+Serial+"' AND S.Name='"+tenant+"';";										
@@ -290,7 +288,7 @@ try  {
 		}
 															
 		//Get All Nodes to be retired --> Implies that DR nodes come after Prod Nodes always.				
-		var selectQuery = "SELECT Id, Name as Hostname, Serial, ServiceProfile FROM FarmObject JOIN ServiceLevel as SL ON F.ServiceLevelId=SL.Id JOIN Service as S ON SL.ServiceId=S.Id WHERE S.Name='"+tenant+"' AND (Name = '"+Hostname+"' AND Serial = '"+Serial+"') OR Name = '"+DRHostname+"';";										
+		var selectQuery = "SELECT Id, Name as Hostname, Serial, ServiceProfile FROM FarmObject as F JOIN ServiceLevel as SL ON F.ServiceLevelId=SL.Id JOIN Service as S ON SL.ServiceId=S.Id WHERE S.Name='"+tenant+"' AND (Name = '"+Hostname+"' AND Serial = '"+Serial+"') OR Name = '"+DRHostname+"';";										
 		System.log( "selectQuery >"+selectQuery );
 		var res = cmdb.readCustomQuery(selectQuery);
 		if(res.length > 0){		
@@ -304,7 +302,6 @@ try  {
 				Server_Data.push(server);					
 			}
 		}	
-		
 		
 		//If DRActiveNodes is == 1 then we can delete LUNs in DR site including boot LUN provided it is the corresponding DR Server.										
 		if(ProdActiveNodes.length > 1 && DRActiveNodes.length == 1 ){ 			
@@ -511,7 +508,7 @@ try  {
 				}																			
 			}																																																										
 		}																								
-	}																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																						
+	}																																																														
 } catch(ex){
 	throw "Retire Server - User Form Data - ERROR: "+ex;
 }
@@ -540,7 +537,7 @@ function insRequest(RequestNumber, CompletedDate, CreatedBy, UpdatedBy, ProjectI
 	
 	var sqlStatement = "INSERT INTO Request(RequestId, Element, CreatedDate, CompletedDate, CreatedBy, UpdatedBy, ProjectId, Action_State, Office, Tenant) OUTPUT Inserted.Id ";
 	sqlStatement = sqlStatement + "VALUES(";
-    sqlStatement = sqlStatement + "'"+RequestNumber+"',";
+  sqlStatement = sqlStatement + "'"+RequestNumber+"',";
 	sqlStatement = sqlStatement + "'"+Element+"',";
 	sqlStatement = sqlStatement + ""+CreatedDate+",";
 	sqlStatement = sqlStatement + ""+CompletedDate+",";
