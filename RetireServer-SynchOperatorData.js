@@ -38,6 +38,21 @@ try  {
 				}			
 			}																			
 		}
+		
+		//First we make sure we remove any record from the LunMap table which no longer reflects the LUN Map situation.
+		if(UnMap_LUNs && UnMap_LUNs.length > 0){
+			for(var j=0; j<UnMap_LUNs.length; j++){
+				var deleteQuery = "DELETE FROM LunMap WHERE LunId = "+UnMap_LUNs[j].LunId+" AND FarmObjectId="+UnMap_LUNs[j].FarmObjectId+";";
+				var result = cmdb.executeCustomQuery(deleteQuery);
+		
+				if ( result > 0 )  {
+					System.log( "Row with LunId ('"+UnMap_LUNs[j].LunId+"') and FarmObjectId ('"+UnMap_LUNs[j].FarmObjectId+"')  was deleted from table LunMap successfully" );
+				} else  {
+					System.error( "Row delete failed in table LunMap" );
+				}
+			}
+		}
+		
 		if(Delete_LUNs && Delete_LUNs.length > 0){
 			for(var j=0; j<Delete_LUNs.length; j++){																																																														
 				var deleteQuery = "DELETE FROM Lun WHERE Id = "+Delete_LUNs[j].LunId+" AND FarmObjectId="+Delete_LUNs[j].FarmObjectId+";";
@@ -97,19 +112,6 @@ try  {
 				}										
 			}	
 		
-		//At this point we make sure we remove any other record from the LunMap table which no longer reflects the LUN Map situation.
-		if(UnMap_LUNs && UnMap_LUNs.length > 0){
-			for(var j=0; j<UnMap_LUNs.length; j++){
-				var deleteQuery = "DELETE FROM LunMap WHERE LunId = "+UnMap_LUNs[j].LunId+" AND FarmObjectId="+UnMap_LUNs[j].FarmObjectId+";";
-				var result = cmdb.executeCustomQuery(deleteQuery);
-		
-				if ( result > 0 )  {
-					System.log( "Row with LunId ('"+UnMap_LUNs[j].LunId+"') and FarmObjectId ('"+UnMap_LUNs[j].FarmObjectId+"')  was deleted from table LunMap successfully" );
-				} else  {
-					System.error( "Row delete failed in table LunMap" );
-				}
-			}
-		}
 		// We remove the cluster name if it is no longer associated to any node.
 		if(ClusterId[0] > 2){		
 			var selectQuery = "SELECT Id From FarmObject WHERE ClusterId="+ClusterId[0]+" AND State='Active';";
