@@ -8,6 +8,11 @@ try  {
 	
 	Lun_Delete 	= new Array(); 
 	Lun_UnMap	= new Array();
+	
+	Server_Data = new Array();
+	
+	Nodes	 	= new Array();	
+	DRNodes	 	= new Array();
 		
 	//Define Prod and DR Naming Convention
 	if(tenant != "ISP"){
@@ -46,90 +51,7 @@ try  {
 			var DRCluster 	= Cluster;
 		}									
 	}	
-		
-	if(Cluster == "STANDALONE"){ //Remove Lun From Lun table	
-		if(!RemoveAll) { //Remove a single LUN from one server
-				
-			var selectQuery = "SELECT L.Id, LunScsiId, Size, FarmObjectId FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name='"+Hostname+"' AND F.Serial='"+Serial+"' AND UidSerial='"+UIDSerial+"';";	
-			System.log("selectQuery:"+selectQuery);
-				
-			var res = cmdb.readCustomQuery(selectQuery);
-			if(res){		
-				for(var x in res){
-					var lun 						= new Object();	
-					lun.ForeignBank					= tenant;			
-					lun.Hostname					= Hostname;
-					lun.Serial						= Serial;
-					lun.ScsiId						= res[x].getProperty("LunScsiId");
-					lun.UidSerial					= UIDSerial; 								
-					lun.Size 						= res[x].getProperty("Size");
-					lun.LunId						= res[x].getProperty("Id");
-					lun.FarmObjectId				= res[x].getProperty("FarmObjectId");
-					Lun_Delete.push(lun);												
-				}
-			}
-			var selectQuery = "SELECT L.Id, UidSerial, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name='"+DRHostname+"' AND LunScsiId="+Lun_Delete[0].ScsiId+" AND Size="+Lun_Delete[0].Size+";";	
-			System.log("lunQuery:"+selectQuery);				
-			var res = cmdb.readCustomQuery(selectQuery);
-			if(res){
-				for(var j in res){
-					var lun = new Object();	
-					lun.ForeignBank					= tenant;			
-					lun.Hostname					= DRHostname;
-					lun.Serial						= res[j].getProperty("Serial"); 
-					lun.ScsiId						= Lun_Delete[0].ScsiId;
-					lun.UidSerial					= res[j].getProperty("UidSerial"); 								
-					lun.Size 						= Lun_Delete[0].Size;
-					lun.LunId						= res[j].getProperty("Id");
-					lun.FarmObjectId				= res[j].getProperty("FarmObjectId");
-					Lun_Delete.push(lun);
-				}
-			}																																																																																																																	
-		}
-		else if (RemoveAll) {		
-			//Get LUN Data for operator			
-			var selectQuery = "SELECT L.Id, LunScsiId, Size, UidSerial, FarmObjectId FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name = "+Hostname+" AND F.Serial = '"+Serial+"';";	
-			System.log("selectQuery:"+selectQuery);
-				
-			var res = cmdb.readCustomQuery(selectQuery);
-			if(res){		
-				for(var x in res){
-					var lun = new Object();				
-					lun.ForeignBank					= tenant;
-					lun.Hostname					= Hostname;
-					lun.Serial						= Serial;
-					lun.ScsiId						= res[x].getProperty("LunScsiId");
-					lun.UidSerial					= res[x].getProperty("UidSerial");								
-					lun.Size 						= res[x].getProperty("Size");
-					lun.LunId						= res[x].getProperty("Id");
-					lun.FarmObjectId				= res[x].getProperty("FarmObjectId");
-					Lun_Delete.push(lun);
-				}		
-			}	
 	
-			var selectQuery = "SELECT L.Id, LunScsiId, Size, UidSerial, FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name = '"+DRHostname+"';";	
-			System.log("selectQuery:"+selectQuery);
-				
-			var res = cmdb.readCustomQuery(selectQuery);
-			if(res){		
-				for(var x in res){
-					var lun = new Object();				
-					lun.ForeignBank					= tenant;
-					lun.Hostname					= DRHostname;
-					lun.Serial						= res[x].getProperty("Serial");
-					lun.ScsiId						= res[x].getProperty("LunScsiId");
-					lun.UidSerial					= res[x].getProperty("UidSerial");								
-					lun.Size 						= res[x].getProperty("Size");
-					lun.LunId						= res[x].getProperty("Id");
-					lun.FarmObjectId				= res[x].getProperty("FarmObjectId");
-					Lun_Delete.push(lun);
-				}		
-			}									
-		}
-	}
-	else if (Cluster != "STANDALONE") {		
-		Nodes	 	= new Array();	
-		DRNodes	 	= new Array();
 		//Get Nodes of cluster
 		var selectQuery = "SELECT F.Id FROM FarmObject as F JOIN Cluster as C ON F.ClusterId=C.Id WHERE C.Name = '"+Cluster+"';";										
 		var res = cmdb.readCustomQuery(selectQuery);
@@ -147,269 +69,365 @@ try  {
 			}	
 		}
 		
+		//Get Nodes to be unmapped --> Implies that DR node comes after Prod Node always.				
+		var selectQuery = "SELECT F.Id, F.Name as Hostname, F.Serial FROM FarmObject as F JOIN ServiceLevel as SL ON F.ServiceLevelId=SL.Id JOIN Service as S ON SL.ServiceId=S.Id WHERE S.Name='"+tenant+"' AND (F.Name = '"+Hostname+"' OR F.Name = '"+DRHostname+"');";										
+		System.log( "selectQuery >"+selectQuery );
+		var res = cmdb.readCustomQuery(selectQuery);
+		if(res.length > 0){		
+			for(var x in res){		
+				var server			= new Object();
+				server.ForeignBank	= tenant;
+				server.FarmObjectId	= res[x].getProperty("Id");
+				server.Hostname		= res[x].getProperty("Hostname");
+				server.Serial		= res[x].getProperty("Serial");
+				Server_Data.push(server);
+			}
+		}	
+		
+	if(Cluster == "STANDALONE"){ //Remove Lun using Lun_Delete array and we can use Server_Data[] array since it is a single node	
+		if(!RemoveAll) { //Remove a single LUN from one server by filtering UidSerial in Production and LunScsi and Size in DR.		
+			var selectQuery = "SELECT Id, LunScsiId, Size FROM Lun WHERE FarmObjectId="+Server_Data[0].FarmObjectId+" AND UidSerial='"+UIDSerial+"';";	
+			System.log("selectQuery:"+selectQuery);
+				
+			var res = cmdb.readCustomQuery(selectQuery);
+			if(res){		
+				for(var x in res){
+					var lun 		= new Object();	
+					lun.ForeignBank	= tenant;			
+					lun.Hostname	= Server_Data[0].Hostname;
+					lun.Serial		= Server_Data[0].Serial;
+					lun.ScsiId		= res[x].getProperty("LunScsiId");
+					lun.UidSerial	= UIDSerial; 								
+					lun.Size 		= res[x].getProperty("Size");
+					lun.LunId		= res[x].getProperty("Id");
+					lun.FarmObjectId= Server_Data[0].FarmObjectId;
+					Lun_Delete.push(lun);												
+				}
+			}
+			var selectQuery = "SELECT Id, UidSerial FROM Lun WHERE FarmObjectId="+Server_Data[1].FarmObjectId+" AND LunScsiId="+Lun_Delete[0].ScsiId+" AND Size="+Lun_Delete[0].Size+";";	
+			System.log("lunQuery:"+selectQuery);				
+			var res = cmdb.readCustomQuery(selectQuery);
+			if(res){
+				for(var j in res){
+					var lun = new Object();	
+					lun.ForeignBank	= tenant;			
+					lun.Hostname	= Server_Data[1].Hostname;
+					lun.Serial		= Server_Data[1].Serial; 
+					lun.ScsiId		= Lun_Delete[0].ScsiId;
+					lun.UidSerial	= res[j].getProperty("UidSerial"); 								
+					lun.Size 		= Lun_Delete[0].Size;
+					lun.LunId		= res[j].getProperty("Id");
+					lun.FarmObjectId= Server_Data[1].FarmObjectId;
+					Lun_Delete.push(lun);
+				}
+			}																																														
+		}
+		else if (RemoveAll) {		
+			//Get LUN Data for operator			
+			var selectQuery = "SELECT Id, LunScsiId, Size, UidSerial FROM Lun WHERE FarmObjectId = "+Server_Data[0].FarmObjectId+";";	
+			System.log("selectQuery:"+selectQuery);
+				
+			var res = cmdb.readCustomQuery(selectQuery);
+			if(res){		
+				for(var x in res){
+					var lun = new Object();
+					lun.ForeignBank	= tenant;
+					lun.Hostname	= Server_Data[0].Hostname;
+					lun.Serial		= Server_Data[0].Serial;
+					lun.ScsiId		= res[x].getProperty("LunScsiId");
+					lun.UidSerial	= res[x].getProperty("UidSerial");								
+					lun.Size 		= res[x].getProperty("Size");
+					lun.LunId		= res[x].getProperty("Id");
+					lun.FarmObjectId= Server_Data[0].FarmObjectId;
+					Lun_Delete.push(lun);
+				}		
+			}	
+	
+			var selectQuery = "SELECT Id, LunScsiId, Size, UidSerial FROM Lun WHERE FarmObjectId = "+Server_Data[1].FarmObjectId+";";	
+			System.log("selectQuery:"+selectQuery);
+				
+			var res = cmdb.readCustomQuery(selectQuery);
+			if(res){		
+				for(var x in res){
+					var lun = new Object();
+					lun.ForeignBank	= tenant;
+					lun.Hostname	= Server_Data[1].Hostname;
+					lun.Serial		= Server_Data[1].Serial;
+					lun.ScsiId		= res[x].getProperty("LunScsiId");
+					lun.UidSerial	= res[x].getProperty("UidSerial");								
+					lun.Size 		= res[x].getProperty("Size");
+					lun.LunId		= res[x].getProperty("Id");
+					lun.FarmObjectId= Server_Data[1].FarmObjectId;
+					Lun_Delete.push(lun);
+				}		
+			}									
+		}
+	}
+	else if (Cluster != "STANDALONE") {				
 		if(Nodes.length > 1) { // Fai solo Unmap della LUN visto che essistono più nodi
-			//Production Nodes
-			if(!RemoveAll) {			
-				var selectQuery = "SELECT L.Id, L.LunScsiId, L.Size, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name='"+Hostname+"' AND L.UidSerial='"+UIDSerial+"' AND L.IsBootLun='false';";	
+			if(!RemoveAll) {		
+				//Use Nodes[0] as this contains the primary node of cluster which should be contained in the LUN table.
+				var selectQuery = "SELECT Id, LunScsiId, Size FROM Lun WHERE FarmObjectId="+Nodes[0]+" AND UidSerial='"+UIDSerial+"' AND IsBootLun='false';";	
 				System.log("selectQuery:"+selectQuery);
 			
 				var res = cmdb.readCustomQuery(selectQuery);
 				if(res){		
 					for(var x in res){
-						var map 						= new Object();		
-						map.ForeignBank					= tenant;				
-						map.Hostname					= Hostname;
-						map.Serial						= res[x].getProperty("Serial");
-						map.ScsiId						= res[x].getProperty("LunScsiId");
-						map.UidSerial					= UIDSerial; 								
-						map.Size 						= res[x].getProperty("Size");
-						map.LunId						= res[x].getProperty("Id");
-						map.FarmObjectId				= res[x].getProperty("FarmObjectId");					
+						var map 		= new Object();		
+						map.ForeignBank	= tenant;				
+						map.Hostname	= Server_Data[0].Hostname;
+						map.Serial		= Server_Data[0].Serial;
+						map.ScsiId		= res[x].getProperty("LunScsiId");
+						map.UidSerial	= UIDSerial; 								
+						map.Size 		= res[x].getProperty("Size");
+						map.LunId		= res[x].getProperty("Id");
+						map.FarmObjectId= Server_Data[0].FarmObjectId;				
 						Lun_UnMap.push(map);
 					}
 				}
-				var selectQuery = "SELECT L.Id, L.LunScsiId, L.Size, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name='"+Hostname+"' AND L.UidSerial='"+UIDSerial+"' AND L.IsBootLun='true';";	
+				//If boot LUN then we know that the LUN is contained in the LUN table regardless of node cluster, we can delete this LUN.
+				var selectQuery = "SELECT Id, LunScsiId, Size FROM Lun WHERE FarmObjectId="+Server_Data[0].FarmObjectId+" AND UidSerial='"+UIDSerial+"' AND L.IsBootLun='true';";	
 				System.log("selectQuery:"+selectQuery);
 			
 				var res = cmdb.readCustomQuery(selectQuery);
 				if(res){		
 					for(var x in res){
-						var lun 						= new Object();		
-						lun.ForeignBank					= tenant;				
-						lun.Hostname					= Hostname;
-						lun.Serial						= res[x].getProperty("Serial");
-						lun.ScsiId						= res[x].getProperty("LunScsiId");
-						lun.UidSerial					= UIDSerial; 								
-						lun.Size 						= res[x].getProperty("Size");
-						lun.LunId						= res[x].getProperty("Id");
-						lun.FarmObjectId				= res[x].getProperty("FarmObjectId");					
+						var lun 		= new Object();		
+						lun.ForeignBank	= tenant;				
+						lun.Hostname	= Server_Data[0].Hostname;
+						lun.Serial		= Server_Data[0].Serial;
+						lun.ScsiId		= res[x].getProperty("LunScsiId");
+						lun.UidSerial	= UIDSerial; 								
+						lun.Size 		= res[x].getProperty("Size");
+						lun.LunId		= res[x].getProperty("Id");
+						lun.FarmObjectId= Server_Data[0].FarmObjectId;					
 						Lun_Delete.push(lun);
 					}
-				}									
+				}							
 			}																																																						
 			else if (RemoveAll) {								
-				var selectQuery = "SELECT L.Id, L.LunScsiId, L.UidSerial, L.Size, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name='"+Hostname+"' AND L.IsBootLun='false';";	
+				var selectQuery = "SELECT Id, LunScsiId, UidSerial, Size FROM Lun WHERE FarmObjectId="+Nodes[0]+" AND IsBootLun='false';";	
 				System.log("selectQuery:"+selectQuery);
 				
 				var res = cmdb.readCustomQuery(selectQuery);
 				if(res){		
 					for(var x in res){
-						var map 						= new Object();		
-						map.ForeignBank					= tenant;				
-						map.Hostname					= Hostname;
-						map.Serial						= res[x].getProperty("Serial");
-						map.ScsiId						= res[x].getProperty("LunScsiId");
-						map.UidSerial					= UIDSerial; 								
-						map.Size 						= res[x].getProperty("Size");
-						map.LunId						= res[x].getProperty("Id");
-						map.FarmObjectId				= res[x].getProperty("FarmObjectId");						
+						var map 		= new Object();		
+						map.ForeignBank	= tenant;				
+						map.Hostname	= Server_Data[0].Hostname;
+						map.Serial		= Server_Data[0].Serial;
+						map.ScsiId		= res[x].getProperty("LunScsiId");
+						map.UidSerial	= res[x].getProperty("UidSerial"); 								
+						map.Size 		= res[x].getProperty("Size");
+						map.LunId		= res[x].getProperty("Id");
+						map.FarmObjectId= Server_Data[0].FarmObjectId;					
 						Lun_UnMap.push(map);
 					}		
 				}	
 					
-				var selectQuery = "SELECT L.Id, L.LunScsiId, L.UidSerial, L.Size, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name='"+Hostname+"' AND L.IsBootLun='true';";	
+				var selectQuery = "SELECT Id, LunScsiId, UidSerial, Size FROM Lun WHERE FarmObjectId="+Server_Data[0].FarmObjectId+" AND IsBootLun='true';";	
 				System.log("selectQuery:"+selectQuery);
 				
 				var res = cmdb.readCustomQuery(selectQuery);
 				if(res){		
 					for(var x in res){
-						var lun 						= new Object();		
-						lun.ForeignBank					= tenant;				
-						lun.Hostname					= Hostname;
-						lun.Serial						= res[x].getProperty("Serial");
-						lun.ScsiId						= res[x].getProperty("LunScsiId");
-						lun.UidSerial					= UIDSerial; 								
-						lun.Size 						= res[x].getProperty("Size");
-						lun.LunId						= res[x].getProperty("Id");
-						lun.FarmObjectId				= res[x].getProperty("FarmObjectId");						
+						var lun 		= new Object();		
+						lun.ForeignBank	= tenant;				
+						lun.Hostname	= Server_Data[0].Hostname;
+						lun.Serial		= Server_Data[0].Serial;
+						lun.ScsiId		= res[x].getProperty("LunScsiId");
+						lun.UidSerial	= res[x].getProperty("UidSerial"); 								
+						lun.Size 		= res[x].getProperty("Size");
+						lun.LunId		= res[x].getProperty("Id");
+						lun.FarmObjectId= Server_Data[0].FarmObjectId;						
 						Lun_Delete.push(lun);
 					}		
-				}																				
+				}								
 			}
 		}
 		else if(Nodes.length == 1) {  //Unico nodo eliminare la LUN
 			if(!RemoveAll) {
-				var selectQuery = "SELECT L.Id, L.LunScsiId, L.Size, FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name='"+Hostname+"' AND L.UidSerial='"+UIDSerial+"';";	
+				var selectQuery = "SELECT Id, LunScsiId, Size FROM Lun WHERE FarmObjectId="+Server_Data[0].FarmObjectId+" AND UidSerial='"+UIDSerial+"';";	
 				System.log("selectQuery:"+selectQuery);
 				
 				var res = cmdb.readCustomQuery(selectQuery);
 				if(res){		
 					for(var x in res){
-						var lun 						= new Object();		
-						lun.ForeignBank					= tenant;				
-						lun.Hostname					= Hostname;
-						lun.Serial						= res[x].getProperty("Serial");
-						lun.ScsiId						= res[x].getProperty("LunScsiId");
-						lun.UidSerial					= UIDSerial; 								
-						lun.Size 						= res[x].getProperty("Size");
-						lun.LunId						= res[x].getProperty("Id");
-						lun.FarmObjectId				= res[x].getProperty("FarmObjectId");					
+						var lun 		= new Object();		
+						lun.ForeignBank	= tenant;				
+						lun.Hostname	= Server_Data[0].Hostname;
+						lun.Serial		= Server_Data[0].Serial;
+						lun.ScsiId		= res[x].getProperty("LunScsiId");
+						lun.UidSerial	= UIDSerial; 								
+						lun.Size 		= res[x].getProperty("Size");
+						lun.LunId		= res[x].getProperty("Id");
+						lun.FarmObjectId= Server_Data[0].FarmObjectId;				
 						Lun_Delete.push(lun);
 					}		
 				}																																																			
 			}
 			else if (RemoveAll) {									
-				var selectQuery = "SELECT L.Id, L.LunScsiId, L.UidSerial, L.Size, FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name='"+Hostname+"';";	
+				var selectQuery = "SELECT Id, LunScsiId, UidSerial, Size FROM Lun WHERE FarmObjectId="+Server_Data[0].FarmObjectId+";";	
 				System.log("selectQuery:"+selectQuery);
 				
 				var res = cmdb.readCustomQuery(selectQuery);
 				if(res){		
 					for(var x in res){
-						var lun 						= new Object();		
-						lun.ForeignBank					= tenant;				
-						lun.Hostname					= Hostname;
-						lun.Serial						= res[x].getProperty("Serial");
-						lun.ScsiId						= res[x].getProperty("LunScsiId");
-						lun.UidSerial					= res[x].getProperty("UidSerial");								
-						lun.Size 						= res[x].getProperty("Size");
-						lun.LunId						= res[x].getProperty("Id");
-						lun.FarmObjectId				= res[x].getProperty("FarmObjecId");					
+						var lun 					= new Object();		
+						lun.ForeignBank	= tenant;				
+						lun.Hostname	= Server_Data[0].Hostname;
+						lun.Serial		= Server_Data[0].Serial;
+						lun.ScsiId		= res[x].getProperty("LunScsiId");
+						lun.UidSerial	= res[x].getProperty("UidSerial");								
+						lun.Size 		= res[x].getProperty("Size");
+						lun.LunId		= res[x].getProperty("Id");
+						lun.FarmObjectId= Server_Data[0].FarmObjectId;					
 						Lun_Delete.push(lun);
 					}		
 				}					
 			}	
 		}
-		if(DRNodes.length > 1) { // Fai solo Unmap della LUN relativo al server in DR visto che essistono più nodi		
+		if(DRNodes.length > 1) { // Facciamo Unmap della LUN relativo al server in DR. Se ci sono più nodi in DR sicuramente ci sono più nodi in produzione quindi i dati LUN sono contenuti nel array Lun_UnMap.	
 			if(!RemoveAll) {
-				var selectQuery = "SELECT L.Id, L.UIDSerial, L.Size, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name='"+DRHostname+"' AND L.LunScsiId="+Lun_UnMap[0].ScsiId+" AND L.Size ="+Lun_UnMap[0].Size+" AND IsBootLun='false';";	
+				var selectQuery = "SELECT Id, UIDSerial FROM Lun WHERE FarmObjectId="+DRNodes[0]+" AND LunScsiId="+Lun_UnMap[0].ScsiId+" AND Size="+Lun_UnMap[0].Size+" AND IsBootLun='false';";	
 				System.log("selectQuery:"+selectQuery);
-						
+
 				var res = cmdb.readCustomQuery(selectQuery);
 				if(res){		
 					for(var x in res){
-						var map 						= new Object();		
-						map.ForeignBank					= tenant;				
-						map.Hostname					= DRHostname;
-						map.Serial						= res[x].getProperty("Serial");
-						map.ScsiId						= Lun_UnMap[0].ScsiId;
-						map.UidSerial					= res[x].getProperty("UIDSerial");								
-						map.Size 						= Lun_UnMap[0].Size;
-						map.LunId						= res[x].getProperty("Id");
-						map.FarmObjectId				= res[x].getProperty("FarmObjectId");						
+						var map 		= new Object();		
+						map.ForeignBank	= tenant;				
+						map.Hostname	= Server_Data[1].Hostname;
+						map.Serial		= Server_Data[1].Serial;
+						map.ScsiId		= Lun_UnMap[0].ScsiId;
+						map.UidSerial	= res[x].getProperty("UIDSerial");								
+						map.Size 		= Lun_UnMap[0].Size;
+						map.LunId		= res[x].getProperty("Id");
+						map.FarmObjectId= Server_Data[1].FarmObjectId;					
 						Lun_UnMap.push(map);
 					}		
 				}
-
-	
-				var selectQuery = "SELECT L.Id, L.UIDSerial, L.Size, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name='"+DRHostname+"' AND L.LunScsiId="+Lun_Delete[0].ScsiId+" AND L.Size ="+Lun_Delete[0].Size+" AND IsBootLun='true';";	
+					
+				var selectQuery = "SELECT Id, UIDSerial FROM Lun WHERE FarmObjectId="+Server_Data[1].FarmObjectId+" AND LunScsiId="+Lun_Delete[0].ScsiId+" AND Size ="+Lun_Delete[0].Size+" AND IsBootLun='true';";	
 				System.log("selectQuery:"+selectQuery);
-						
+
 				var res = cmdb.readCustomQuery(selectQuery);
 				if(res){		
 					for(var x in res){
-						var lun 						= new Object();		
-						lun.ForeignBank					= tenant;				
-						lun.Hostname					= DRHostname;
-						lun.Serial						= res[x].getProperty("Serial");
-						lun.ScsiId						= Lun_Delete[0].ScsiId;
-						lun.UidSerial					= res[x].getProperty("UIDSerial");								
-						lun.Size 						= Lun_Delete[0].Size;
-						lun.LunId						= res[x].getProperty("Id");
-						lun.FarmObjectId				= res[x].getProperty("FarmObjectId");						
+						var lun 			= new Object();		
+						lun.ForeignBank		= tenant;				
+						lun.Hostname		= Server_Data[1].Hostname;
+						lun.Serial			= Server_Data[1].Serial;
+						lun.ScsiId			= Lun_Delete[0].ScsiId;
+						lun.UidSerial		= res[x].getProperty("UIDSerial");								
+						lun.Size 			= Lun_Delete[0].Size;
+						lun.LunId			= res[x].getProperty("Id");
+						lun.FarmObjectId	= Server_Data[1].FarmObjectId;						
 						Lun_Delete.push(lun);
 					}		
-				}																																																																																																			
-			}
+				}																																																																										}																							
 			else if (RemoveAll) {								
-				var selectQuery = "SELECT L.Id, L.LunScsiId, L.UidSerial, L.Size, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name = '"+DRHostname+"' AND L.IsBootLun='false';";	
+				var selectQuery = "SELECT Id, LunScsiId, UidSerial, Size FROM Lun WHERE FarmObjectId = "+DRNodes[0]+" AND IsBootLun='false';";	
 				System.log("selectQuery:"+selectQuery);
 				
 				var res = cmdb.readCustomQuery(selectQuery);
 				if(res){		
 					for(var x in res){
-						var map 						= new Object();		
-						map.ForeignBank					= tenant;				
-						map.Hostname					= DRHostname;
-						map.Serial						= res[x].getProperty("Serial");
-						map.ScsiId						= res[x].getProperty("LunScsiId");
-						map.UidSerial					= res[x].getProperty("UIDSerial");								
-						map.Size 						= res[x].getProperty("Size");
-						map.LunId						= res[x].getProperty("Id");
-						map.FarmObjectId				= res[x].getProperty("FarmObjectId");						
+						var map 			= new Object();		
+						map.ForeignBank		= tenant;				
+						map.Hostname		= Server_Data[1].Hostname;
+						map.Serial			= Server_Data[1].Serial;
+						map.ScsiId			= res[x].getProperty("LunScsiId");
+						map.UidSerial		= res[x].getProperty("UIDSerial");								
+						map.Size 			= res[x].getProperty("Size");
+						map.LunId			= res[x].getProperty("Id");
+						map.FarmObjectId	= Server_Data[1].FarmObjectId;					
 						Lun_UnMap.push(map);
 					}		
 				}
 				
-				var selectQuery = "SELECT L.Id, L.LunScsiId, L.UidSerial, L.Size, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name = '"+DRHostname+"' AND L.IsBootLun='true';";	
+				var selectQuery = "SELECT Id, LunScsiId, UidSerial, Size FROM Lun WHERE FarmObjectId = "+Server_Data[1].FarmObjectId+" AND IsBootLun='true';";	
 				System.log("selectQuery:"+selectQuery);
 				
 				var res = cmdb.readCustomQuery(selectQuery);
 				if(res){		
 					for(var x in res){
-						var lun 						= new Object();		
-						lun.ForeignBank					= tenant;				
-						lun.Hostname					= DRHostname;
-						lun.Serial						= res[x].getProperty("Serial");
-						lun.ScsiId						= res[x].getProperty("LunScsiId");
-						lun.UidSerial					= res[x].getProperty("UIDSerial");								
-						lun.Size 						= res[x].getProperty("Size");
-						lun.LunId						= res[x].getProperty("Id");
-						lun.FarmObjectId				= res[x].getProperty("FarmObjectId");						
+						var lun 		= new Object();		
+						lun.ForeignBank	= tenant;				
+						lun.Hostname	= Server_Data[1].Hostname;
+						lun.Serial		= Server_Data[1].Serial;
+						lun.ScsiId		= res[x].getProperty("LunScsiId");
+						lun.UidSerial	= res[x].getProperty("UIDSerial");								
+						lun.Size 		= res[x].getProperty("Size");
+						lun.LunId		= res[x].getProperty("Id");
+						lun.FarmObjectId= Server_Data[1].FarmObjectId;					
 						Lun_Delete.push(lun);
 					}		
 				}														
 			}			
 		}		
-		else if (DRNodes.length == 1){
+		else if (DRNodes.length == 1){ //If DRNodes length = 1 then we are sure that we can use Server_Data[1] as this will certainly contain DR server and we will use Lun_Delete array always.
 			if(!RemoveAll) {
-				if(Lun_Delete[0]){
-					var selectQuery = "SELECT L.Id, L.UIDSerial, L.Size, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name= '"+DRHostname+"' AND L.LunScsiId="+Lun_Delete[0].ScsiId+" AND L.Size ="+Lun_Delete[0].Size+";";	
+				if(Lun_Delete[0].ScsiId && Lun_Delete[0].Size){//If this is a boot LUN or the last node of a cluster both in Production and DR 
+																											//then the information regarding the LUN will be in the Lun_Delete array.
+					var selectQuery = "SELECT Id, UIDSerial FROM Lun WHERE FarmObjectId= "+Server_Data[1].FarmObjectId+" AND LunScsiId="+Lun_Delete[0].ScsiId+" AND Size ="+Lun_Delete[0].Size+";";	
 					System.log("selectQuery:"+selectQuery);				
 						
 					var res = cmdb.readCustomQuery(selectQuery);
 					if(res){		
 						for(var x in res){
-							var lun 						= new Object();		
-							lun.ForeignBank					= tenant;				
-							lun.Hostname					= DRHostname;
-							lun.Serial						= res[x].getProperty("Serial");
-							lun.ScsiId						= Lun_Delete[0].ScsiId;			//Use Lun_UnMap since Prod is cluster lun must be unmapped not deleted
-							lun.UidSerial					= res[x].getProperty("UIDSerial");								
-							lun.Size 						= Lun_Delete[0].Size;			//Use Lun_UnMap since Prod is cluster lun must be unmapped not deleted
-							lun.LunId						= res[x].getProperty("Id");
-							lun.FarmObjectId				= res[x].getProperty("FarmObjectId");						
+							var lun 		= new Object();		
+							lun.ForeignBank	= tenant;				
+							lun.Hostname	= Server_Data[1].Hostname;
+							lun.Serial		= Server_Data[1].Serial;
+							lun.ScsiId		= Lun_Delete[0].ScsiId;		
+							lun.UidSerial	= res[x].getProperty("UIDSerial");								
+							lun.Size 		= Lun_Delete[0].Size;	
+							lun.LunId		= res[x].getProperty("Id");
+							lun.FarmObjectId= Server_Data[1].FarmObjectId;					
 							Lun_Delete.push(lun);
 						}		
 					}
 				}
-				//Important this section is required in case SCSI and SIZE of lun info is in LUN_MAP and not LUN_Delete where in production we may be in the presence of multiple nodes.
-				if(Lun_UnMap[0]){
-					var selectQuery = "SELECT L.Id, L.UIDSerial, L.Size, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name= '"+DRHostname+"' AND L.LunScsiId="+Lun_UnMap[0].ScsiId+" AND L.Size ="+Lun_UnMap[0].Size+";";	
+			//If in production we have multiple nodes then the LUN to remove is most likely a data LUN and its information is stored in the Lun_UnMap array.
+				if(Lun_UnMap[0].ScsiId && Lun_UnMap[0].Size){
+					var selectQuery = "SELECT Id, UIDSerial FROM Lun WHERE FarmObjectId= "+Server_Data[1].FarmObjectId+" AND LunScsiId="+Lun_UnMap[0].ScsiId+" AND Size ="+Lun_UnMap[0].Size+";";	
 					System.log("selectQuery:"+selectQuery);				
 						
 					var res = cmdb.readCustomQuery(selectQuery);
 					if(res){		
 						for(var x in res){
-							var lun 						= new Object();		
-							lun.ForeignBank					= tenant;				
-							lun.Hostname					= DRHostname;
-							lun.Serial						= res[x].getProperty("Serial");
-							lun.ScsiId						= Lun_UnMap[0].ScsiId;			//Use Lun_UnMap since Prod is cluster lun must be unmapped not deleted
-							lun.UidSerial					= res[x].getProperty("UIDSerial");								
-							lun.Size 						= Lun_UnMap[0].Size;			//Use Lun_UnMap since Prod is cluster lun must be unmapped not deleted
-							lun.LunId						= res[x].getProperty("Id");
-							lun.FarmObjectId				= res[x].getProperty("FarmObjectId");						
+							var lun 		= new Object();		
+							lun.ForeignBank	= tenant;				
+							lun.Hostname	= Server_Data[1].Hostname;
+							lun.Serial		= Server_Data[1].Serial;
+							lun.ScsiId		= Lun_UnMap[0].ScsiId;
+							lun.UidSerial	= res[x].getProperty("UIDSerial");								
+							lun.Size 		= Lun_UnMap[0].Size;
+							lun.LunId		= res[x].getProperty("Id");
+							lun.FarmObjectId= Server_Data[1].FarmObjectId;						
 							Lun_Delete.push(lun);
 						}		
 					}
 				}																																																																																																															
 			}
+			//Only one node in DR therefore we can delete all LUNs
 			else if (RemoveAll) {									
-				var selectQuery = "SELECT L.Id, L.LunScsiId, L.UidSerial, L.Size, L.FarmObjectId, F.Serial FROM Lun as L JOIN FarmObject as F ON L.FarmObjectId=F.Id WHERE F.Name='"+DRHostname+"';";
+				var selectQuery = "SELECT Id, LunScsiId, UidSerial, Size FROM Lun WHERE FarmObjectId="+Server_Data[1].FarmObjectId+";";
 				System.log("selectQuery:"+selectQuery);
 					
 				var res = cmdb.readCustomQuery(selectQuery);
 				if(res){		
 					for(var x in res){
-						var lun 						= new Object();		
-						lun.ForeignBank					= tenant;				
-						lun.Hostname					= DRHostname;
-						lun.Serial						= res[x].getProperty("Serial");
-						lun.ScsiId						= res[x].getProperty("LunScsiId");
-						lun.UidSerial					= res[x].getProperty("UIDSerial");								
-						lun.Size 						= res[x].getProperty("Size");
-						lun.LunId						= res[x].getProperty("Id");
-						lun.FarmObjectId				= res[x].getProperty("FarmObjectId");						
+						var lun 			= new Object();		
+						lun.ForeignBank		= tenant;				
+						lun.Hostname		= Server_Data[1].Hostname;
+						lun.Serial			= Server_Data[1].Serial;
+						lun.ScsiId			= res[x].getProperty("LunScsiId");
+						lun.UidSerial		= res[x].getProperty("UIDSerial");								
+						lun.Size 			= res[x].getProperty("Size");
+						lun.LunId			= res[x].getProperty("Id");
+						lun.FarmObjectId	= Server_Data[1].FarmObjectId;					
 						Lun_Delete.push(lun);
 					}		
 				}						
