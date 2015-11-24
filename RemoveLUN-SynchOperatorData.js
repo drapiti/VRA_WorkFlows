@@ -24,8 +24,48 @@ try  {
 			} else  {
 				System.error( "Row delete failed in table LunMap" );
 			}			
-		}	
+			
+			if(Nodes.length > 1 && Nodes[0] === Lun_UnMap[i].FarmObjectId){
+			//If the LUNs in the LUN table are mapped to the node whose LUN is to be unmapped
+			//then we need to reassign the LUNs to the first cluster node which has not had LUNs unmapped. ie. Nodes[1] 
+				var updateQuery = "UPDATE Lun Set FarmObjectId="+Nodes[1]+" WHERE Id="+Lun_UnMap[i].LunId+";";
+				var result = cmdb.executeCustomQuery(updateQuery);
+					
+				if ( result > 0 )  {
+					System.log( "Rows with Id ('"+Lun_UnMap[i].LunId+"') were updated in the table Lun successfully" );
+				} else  {
+					System.error( "Row update failed in table Lun" );
+					}	
+				//We update the LunMap table also in the case that the primary node is now replaced by Nodes[1]
+				var updateQuery = "UPDATE LunMap Set FarmObjectId="+Nodes[1]+" WHERE FarmObjectId="+Lun_UnMap[i].FarmObjectId+" AND LunId = "+Lun_UnMap[i].LunId+";";
+				var result = cmdb.executeCustomQuery(updateQuery);
+				if ( result > 0 )  {
+					System.log( "Rows with LunId ('"+Lun_UnMap[j].LunId+"') were successfully updated in the table LunMap" );
+				} else  {
+					System.error( "Row update failed in table LunMap" );
+				}
+			}
+			if(DRNodes.length > 1 && DRNodes[0] === Lun_UnMap[i].FarmObjectId){
+				var updateQuery = "UPDATE Lun Set FarmObjectId="+DRNodes[1]+" WHERE Id="+Lun_UnMap[i].LunId+";";
+				var result = cmdb.executeCustomQuery(updateQuery);
+					
+				if ( result > 0 )  {
+					System.log( "Rows with Id ('"+Lun_UnMap[i].LunId+"') were updated in the table Lun successfully" );
+				} else  {
+					System.error( "Row update failed in table Lun" );
+				}	
+				//We update the LunMap table also in the case that the primary node is now replaced by Nodes[1]
+				var updateQuery = "UPDATE LunMap Set FarmObjectId="+DRNodes[1]+" WHERE FarmObjectId="+Lun_UnMap[i].FarmObjectId+" AND LunId = "+Lun_UnMap[i].LunId+";";
+				var result = cmdb.executeCustomQuery(updateQuery);
+				if ( result > 0 )  {
+					System.log( "Rows with LunId ('"+Lun_UnMap[i].LunId+"') were successfully updated in the table LunMap" );
+				} else  {
+					System.error( "Row update failed in table LunMap" );
+				}
+			}	
+		}
 	}	
+				
 	insRequest(vraRequestId, "CURRENT_TIMESTAMP", user, owner, ProjectId, "COMPLETED", "Storage SAN", tenant);
 	
 } catch(ex){
