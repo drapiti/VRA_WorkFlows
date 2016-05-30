@@ -1,0 +1,91 @@
+var executionContext 			= System.getContext();
+var executionContextString 		= ""; 
+var executionContextProperties 	= new Properties();
+
+for each (var parameter in executionContext.parameterNames().sort()) {
+    executionContextProperties.put(parameter, executionContext.getParameter(parameter));
+    executionContextString += ("\t" + parameter + " : " + executionContext.getParameter(parameter) + "\n");
+	if(parameter == "__asd_requestedFor"){
+		var user = executionContext.getParameter(parameter);
+	}
+	if(parameter == "__asd_tenantRef"){
+		var tenant = executionContext.getParameter(parameter);
+	}
+}
+System.log("\nExecution context :\n" + executionContextString);
+ 
+var txt = getPropertiesText(payload, "", 1);
+System.log("\nEvent payload :\n" + txt);
+ 
+var machine = payload.get("machine");
+var id = machine.get("id");
+ 
+var vcacVm = Server.findForType("vCAC:VirtualMachine", id);
+if (vcacVm != null) {
+    var hostId 			= vcacVm.getEntity().hostId;
+    var vCACHost 		= Server.findForType("vCAC:VCACHost", hostId);
+    var vCACVmProperties= System.getModule("com.vmware.library.vcac").getPropertiesFromVirtualMachine(vCACHost,vcacVm) ;
+    var txt 			= getPropertiesText(vCACVmProperties, "", 1);
+    System.log("\nVCAC VM properties :\n" + txt);
+}
+
+virtualMachineEntity=System.getModule("com.vmware.library.vcac").getVirtualMachineEntity(vCACHost,vcacVm);
+var vCenterVms=System.getModule("com.vmware.library.vc.vm").getAllVMs();
+for each (var vm in vCenterVms) {
+  if (vm.id==vcacVm.externalReferenceId) {
+    vCenterVm=vm;
+    break;
+  }
+}
+var launchedFrom 	= payload.get("lifecycleState");
+externalWFStub		= launchedFrom.get("state")+":"+launchedFrom.get("phase");
+drsGroup 			= vCACVmProperties.get("Site");
+virtualMachineID 	= virtualMachineEntity.entityKey.get("VirtualMachineID");
+
+//Count number of Nics
+var j=0;
+while ( vCACVmProperties.get("VirtualMachine.Network"+j+".Name") ){
+	j++;
+}
+NICnum = j;
+
+//Count number of Disks
+var i=0;
+while( vCACVmProperties.get("VirtualMachine.Disk"+i+".Size") ){
+	i++;
+}
+Disknum = i;
+
+System.log("Disknum: " + Disknum);
+
+function getPropertiesText(properties, text, level) {
+    for each (var key in properties.keys) {
+		
+        var value = properties.get(key);
+        if (System.getObjectType(value) == "Properties") {
+            text += getPropertiesText(value, padLeft(key + " : \n", "\t", level), level+1);
+        }  
+        else {
+            text += padLeft(key + " : " + value + "\n", "\t", level);
+        }  
+    }
+    return text;   
+}
+ 
+function padLeft(string, character, numberOfCharacters) {
+    //System.log(numberOfCharacters);
+    var pre = "";
+    for (var i=0; i<numberOfCharacters; i++) {
+        pre += character;
+    }
+    //System.log(pre + string);
+    return pre + string;
+}
+
+if (vCACVmProperties != null) {
+	for each (var key in vCACVmProperties.keys) {
+		if(key == "__Cafe.Root.Request.Id")
+			requestId = vCACVmProperties.get(key);	
+	}
+	System.log("requestId: "+requestId);	
+}
